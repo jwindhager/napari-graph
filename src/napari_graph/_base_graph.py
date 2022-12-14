@@ -186,7 +186,7 @@ class BaseGraph:
         self,
         edges: ArrayLike = [],
         coords: Optional[Union[pd.DataFrame, ArrayLike]] = None,
-        dim: Optional[int] = None,
+        ndim: Optional[int] = None,
         n_nodes: Optional[int] = None,
         n_edges: Optional[int] = None,
     ):
@@ -203,7 +203,7 @@ class BaseGraph:
         # validating n_nodes and coords
         self._coords = None
         if coords is not None:
-            if dim is not None:
+            if ndim is not None:
                 raise ValueError(
                     "`dim` and `coords` cannot be supplied at the same time."
                 )
@@ -211,7 +211,7 @@ class BaseGraph:
             if not isinstance(coords, pd.DataFrame):
                 coords = np.asarray(coords)
 
-            dim = coords.shape[1]
+            ndim = coords.shape[1]
 
             if n_nodes is None:
                 n_nodes = len(coords)
@@ -225,8 +225,8 @@ class BaseGraph:
             n_nodes = 0
 
         # allocates coords if dim was provided
-        if dim is not None:
-            self._coords = np.empty((n_nodes, dim), dtype=np.float32)
+        if ndim is not None:
+            self._coords = np.empty((n_nodes, ndim), dtype=np.float32)
 
         self._init_buffers(n_nodes=n_nodes, n_edges=n_edges)
 
