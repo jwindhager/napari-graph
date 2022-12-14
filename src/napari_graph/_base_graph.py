@@ -163,7 +163,7 @@ class BaseGraph:
         Nx2 array of pair of nodes (edges).
     coords :
         Optional array of spatial coordinates of nodes.
-    dim : int
+    ndim : int
         Number of spatial dimensions of graph.
     n_nodes : int
         Optional number of nodes to pre-allocate in the graph.
