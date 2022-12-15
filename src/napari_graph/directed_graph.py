@@ -349,16 +349,13 @@ class DirectedGraph(BaseGraph):
     _EDGE_SIZE = _DI_EDGE_SIZE
     _LL_EDGE_POS = _LL_DI_EDGE_POS
 
-    def _init_buffers(self, n_nodes: int, n_edges: int) -> None:
-        super()._init_buffers(n_nodes, n_edges)
+    def _init_node_buffers(self, n_nodes: int) -> None:
+        super()._init_node_buffers(n_nodes)
         self._node2tgt_edges = np.full(
             n_nodes, fill_value=_EDGE_EMPTY_PTR, dtype=int
         )
 
-    def init_data_from_dataframe(
-        self,
-        coords: Union[pd.DataFrame, ArrayLike],
-    ) -> None:
+    def init_nodes(self, coords: Union[pd.DataFrame, ArrayLike]) -> None:
         """Initialize graph nodes from dataframe.
 
         Graph nodes will be indexed by dataframe indices.
@@ -368,7 +365,7 @@ class DirectedGraph(BaseGraph):
         coords : pd.DataFrame
             Data frame containing nodes coordinates.
         """
-        super().init_data_from_dataframe(coords)
+        super().init_nodes(coords)
         n_nodes = len(coords)
         if len(self._node2tgt_edges) < n_nodes:
             self._node2tgt_edges = np.full(

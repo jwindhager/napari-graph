@@ -186,64 +186,81 @@ class BaseGraph:
         n_nodes: Optional[int] = None,
         n_edges: Optional[int] = None,
     ):
-
-        # validating edges length
-        if n_edges is None:
+        # validate edges
+        edges = np.asarray(edges)
+        if n_edges is not None:
+            if len(edges) > n_edges:
+                raise ValueError(
+                    f"`n_edges` ({n_edges}) must be greater than or equal to "
+                    f"the length of `edges` ({len(edges)}."
+                )
+        else:
             n_edges = len(edges)
-
-        if n_edges < len(edges):
-            raise ValueError(
-                f"`n_edges` ({n_edges}) must be greater or equal than `edges` length ({len(edges)}."
-            )
-
-        # validating n_nodes and coords
-        self._coords = None
-        if coords is not None:
-            if ndim is not None:
+        if len(edges) > 0:
+            if edges.ndim != 2:
+                raise ValueError(f"`edges.ndim` ({edges.ndim}) must be 2.")
+            if edges.shape[1] != 2:
                 raise ValueError(
-                    "`dim` and `coords` cannot be supplied at the same time."
+                    f"`edges.shape[1]` ({edges.shape[1]}) must be 2."
                 )
 
+        # validate nodes
+        if coords is not None:
             if not isinstance(coords, pd.DataFrame):
-                coords = np.asarray(coords)
-
-            ndim = coords.shape[1]
-
-            if n_nodes is None:
-                n_nodes = len(coords)
-
-            if n_nodes < len(coords):
+                coords = pd.DataFrame(coords)
+            if coords.index.dtype != np.int64:
                 raise ValueError(
-                    f"`n_nodes` ({n_nodes}) must be greater or equal than `coords` length ({len(coords)})."
+                    "`coords.index.dtype` must be int64, "
+                    f"found {coords.index.dtype}."
                 )
+            if n_nodes is not None:
+                if len(coords.index) > n_nodes:
+                    raise ValueError(
+                        f"`n_nodes` ({n_nodes}) must be greater than or equal "
+                        f"to the length of `coords` ({coords.shape[0]})."
+                    )
+            else:
+                n_nodes = len(coords.index)
+            if len(coords.index) > 0:
+                if ndim is not None:
+                    if len(coords.columns) != ndim:
+                        raise ValueError(
+                            f"`ndim` ({ndim}) does not match the number of "
+                            f"columns of `coords` ({len(coords.columns)})."
+                        )
+                else:
+                    ndim = len(coords.columns)
+        else:
+            if n_nodes is None:
+                n_nodes = 0
+            if ndim is None:
+                ndim = 2
 
-        elif n_nodes is None:
-            n_nodes = 0
-
-        # allocates coords if dim was provided
-        if ndim is not None:
-            self._coords = np.empty((n_nodes, ndim), dtype=np.float32)
-
-        self._init_buffers(n_nodes=n_nodes, n_edges=n_edges)
-
+        # initialize nodes
+        self._init_node_buffers(n_nodes)
         if coords is not None:
-            self.init_data_from_dataframe(coords)
+            self.init_nodes(coords)
+        elif ndim is not None:
+            self._coords = np.empty((n_nodes, ndim), dtype=np.float32)
+        else:
+            self._coords = None
 
+        # initialize edges
+        self._init_edge_buffers(n_edges)
         if len(edges) > 0:
             self.add_edges(edges)
 
-    def _init_buffers(self, n_nodes: int, n_edges: int) -> None:
-        # node-wise buffers
+    def _init_node_buffers(self, n_nodes: int) -> None:
         self._empty_nodes: List[int] = list(reversed(range(n_nodes)))
-        self._node2edges = np.full(
-            n_nodes, fill_value=_EDGE_EMPTY_PTR, dtype=int
-        )
-        self._world2buffer = typed.Dict.empty(types.int64, types.int64)
         self._buffer2world = np.full(
             n_nodes, fill_value=_NODE_EMPTY_PTR, dtype=int
         )
-        # edge-wise buffers
-        self._empty_edge_idx = 0 if n_edges > 0 else _EDGE_EMPTY_PTR
+        self._world2buffer = typed.Dict.empty(types.int64, types.int64)
+        self._node2edges = np.full(
+            n_nodes, fill_value=_EDGE_EMPTY_PTR, dtype=int
+        )
+
+    def _init_edge_buffers(self, n_edges: int) -> None:
         self._n_edges = 0
         self._edges_buffer = np.full(
             n_edges * self._EDGE_DUPLICATION * self._EDGE_SIZE,
@@ -253,12 +270,10 @@ class BaseGraph:
         self._edges_buffer[
             self._LL_EDGE_POS : -self._EDGE_SIZE : self._EDGE_SIZE
         ] = np.arange(1, self._EDGE_DUPLICATION * n_edges)
+        self._empty_edge_idx = 0 if n_edges > 0 else _EDGE_EMPTY_PTR
 
-    def init_data_from_dataframe(
-        self,
-        coords: Union[pd.DataFrame, ArrayLike],
-    ) -> None:
-        """Initialize graph nodes from data frame data.
+    def init_nodes(self, coords: Union[pd.DataFrame, ArrayLike]) -> None:
+        """Initialize graph nodes from coords.
 
         Graph nodes will be indexed by data frame (or array) indices.
 
@@ -276,27 +291,28 @@ class BaseGraph:
             )
 
         n_nodes = len(coords)
-
         if n_nodes > self._coords.shape[0]:
-            self._coords = coords.values.astype(np.float32, copy=True)
+            self._coords = coords.to_numpy(dtype=np.float32, copy=True)
+            self._empty_nodes = []
+            self._buffer2world = coords.index.to_numpy(
+                dtype=np.uint64, copy=True
+            )
+            self._world2buffer = _create_world2buffer_map(self._buffer2world)
             self._node2edges = np.full(
                 n_nodes, fill_value=_EDGE_EMPTY_PTR, dtype=int
             )
-            self._buffer2world = coords.index.values.astype(
-                np.uint64, copy=True
-            )
-            self._empty_nodes = []
         else:
-            self._coords[:n_nodes] = coords.values
-            self._node2edges.fill(_EDGE_EMPTY_PTR)
-            self._buffer2world[:n_nodes] = coords.index.values
+            self._coords[:n_nodes] = coords.to_numpy(dtype=np.float32)
             self._empty_nodes = list(
                 reversed(range(n_nodes, len(self._buffer2world)))
             )  # reversed so we add nodes to the end of it
-
-        self._world2buffer = _create_world2buffer_map(
-            self._buffer2world[:n_nodes]
-        )
+            self._buffer2world[:n_nodes] = coords.index.to_numpy(
+                dtype=np.uint64
+            )           
+            self._world2buffer = _create_world2buffer_map(
+                self._buffer2world[:n_nodes]
+            )
+            self._node2edges.fill(_EDGE_EMPTY_PTR)
 
     @property
     def ndim(self) -> int:
